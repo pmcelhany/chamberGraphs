@@ -4,6 +4,8 @@
 library(shiny)
 library(ggplot2)
 library(stringr)
+library(shinyjs)
+library(lubridate)
 
 options(shiny.maxRequestSize=50*1024^2) 
 
@@ -23,10 +25,18 @@ calcPCO2 <- function(airFlowSLPM, airCO2ppm, CO2flowSCCM){
 
 # Define UI ----
 ui <- fluidPage(
+  useShinyjs(),
   titlePanel("CO2 Chambers"),
   sidebarLayout(
     sidebarPanel( width = 2,
-       fileInput("files", h4("File input"), multiple = TRUE, accept = c(".lvm", ".txt")),
+      radioButtons("fileMode", h4("File Mode"),
+                   choices = list("Select Files" = "selectFiles", 
+                                  "Auto Update" = "autoUpdate"), selected = "selectFiles"),
+       fileInput("files", h4("Select Input Files"), multiple = TRUE, accept = c(".lvm", ".txt")),
+       shinyDirButton('folder', 'Update Files Folder', 'Please select a folder', FALSE),
+       fileInput("batFile", h4("Update batchfile"), multiple = FALSE, accept = c(".bat")),
+       textInput("updateInt", "Update time interval (minutes)", "15"),
+       actionButton("startAutoUpdate", "Start auto update"),
        textInput("avgWin", "Moving average window (nObs)", "4"),
        textInput("inCO2", "Input Air stream CO2 (ppm)", "6"),
        radioButtons("plotType", h4("Plot Variable"),
@@ -40,7 +50,15 @@ ui <- fluidPage(
        sliderInput("ySlider", "Y-axis Range\n(times 1000 for CO2 concentration)", 
                    min = 0, max = 20, value = c(6, 12)),
        checkboxInput("yRangeCheckbox", "Limit Graph Y-axixs Range", value = FALSE),
-       dateRangeInput("dates", h4("Date range"), start = "2018-03-13"),
+      radioButtons("graphDates", h4("Graph Dates"),
+                   choices = list("All dates" = "allDates",
+                                  "Selected Range" = "selectedDates", 
+                                  "Last hour" = "lastHour",
+                                  "Last day" = "lastDay",
+                                  "Last week" = "lastWeek",
+                                  "Last 30 days" = "last30"),
+                   selected = "allDates"),
+       uiOutput("dateRange"),
        downloadButton("downloadData", "Download")
     ),
     mainPanel(
@@ -58,12 +76,13 @@ ui <- fluidPage(
 
 # Define server logic ----
 server <- function(input, output) {
-  values <- reactiveValues(chData = NULL, test = NULL)
-
-  values$chData <- observeEvent(input$files, {
+  volumes <- getVolumes()
+  shinyDirChoose(input, 'folder', roots = volumes, filetypes=c('', 'txt'))
+  
+  processFiles <- function(fileNames, filePaths){
     
     # Create a Progress object
-    progress <- shiny::Progress$new(min = 1, max = length(input$files$name))
+    progress <- shiny::Progress$new(min = 1, max = length(fileNames))
     # Make sure it closes when we exit this reactive, even if there's an error
     on.exit(progress$close())
     
@@ -73,17 +92,17 @@ server <- function(input, output) {
                     temperature = numeric(), airMFC = numeric(), co2MFC = numeric(),
                     targetAir = numeric(), targetCIO2 = numeric(), obsCO2conc = numeric(),
                     stringsAsFactors = FALSE)
-    for(i in 1:length(input$files$name)){
+    for(i in 1:length(fileNames)){
       # Set the progress bar, and update the detail text.
-      progress$set(value = i, detail = paste(i, " of ", length(input$files$name)))
-      chamberID <- word(input$files$name[i], 1, 1, sep = "_")
-      #dTime <- read.table(input$files$datapath[i], header = FALSE, sep = "\t", skip = 9, nrows = 2)
+      progress$set(value = i, detail = paste(i, " of ", length(fileNames)))
+      chamberID <- word(fileNames[i], 1, 1, sep = "_")
+      #dTime <- read.table(filePaths[i], header = FALSE, sep = "\t", skip = 9, nrows = 2)
       #startDateTime <- paste(dTime$V2[1], dTime$V2[2], sep = "_")
       #startDateTime <- as.POSIXct(strptime(startDateTime, "%Y/%m/%d_%H:%M:%OS"))
-      fileStartDateTime <- word(input$files$name[i], 2, 3, sep = "_")
+      fileStartDateTime <- word(fileNames[i], 2, 3, sep = "_")
       fileStartDateTime <- as.POSIXct(strptime(fileStartDateTime, "%y-%m-%d_%H%M"))
       #values$test <- startDateTime
-      dtemp <- read.table(input$files$datapath[i], header = FALSE, sep = "\t", skip = 22, skipNul = TRUE)
+      dtemp <- read.table(filePaths[i], header = FALSE, sep = "\t", skip = 22, skipNul = TRUE)
       #difference (in seconds) from start of program and start of file
       offsetTime <- dtemp$V1[1]
       dateTime <- fileStartDateTime + dtemp$V1 - offsetTime
@@ -114,16 +133,128 @@ server <- function(input, output) {
       d <- rbind(d, dShort)
       #output$dTable <- renderDataTable({d})
     }
-    values$chData <- d
+    return(d)
+  } 
+  
+  observeEvent(input$fileMode, {
+    if(input$fileMode == "autoUpdate"){
+      disable("files")
+      hide("files")
+      enable("folder")
+      enable("batFile")
+      enable("updateFreq")
+      enable("startAutoUpdate")
+      show("folder")
+      show("batFile")
+      show("updateFreq")
+      show("startAutoUpdate")
+    }
+    if(input$fileMode == "selectFiles"){
+      enable("files")
+      show("files")
+      disable("folder")
+      disable("batFile")
+      disable("updateFreq")
+      disable("startAutoUpdate")
+      hide("folder")
+      hide("batFile")
+      hide("updateFreq")
+      hide("startAutoUpdate")
+    }
   })
+  
+  values <- reactiveValues(chData = NULL, dataDir = NULL, batFilePath = NULL, 
+                           updateInterval = NULL, graphMinDateTime = NULL, 
+                           graphMaxDateTime = NULL, test = NULL)
+  
+  observeEvent(input$files,{
+    values$chData <- processFiles(input$files$name, input$files$datapath)
+  })
+  
+  observeEvent(input$folder, {
+    values$dataDir <- parseDirPath(volumes, input$folder)
+  })
+  
+  observeEvent(input$batFile, {
+    values$batFilePath <- input$batFile$datapath
+  })
+  
+  observeEvent(input$batFile, {
+    values$batFilePath <- input$batFile$datapath
+  })
+  
+  observeEvent(input$updateInt,{
+    #user input is in minutes, but reactivetimer uses milliseconds
+    print(input$updateInt)
+    values$updateInterval <- as.integer(input$updateInt) * 60 * 1000
+    print(values$updateInterval)
+  })
+  
+  updateData <- function(){
+    shell(values$batFilePath)
+    filesInFolder <- list.files(path=values$dataDir, pattern="*.lvm", full.names=TRUE, recursive=FALSE)
+    filePaths <- unlist(filesInFolder)
+    fileNames <- basename(filePaths)
+    values$chData <- processFiles(fileNames, filePaths)
+  }
+  
+  observeEvent(input$startAutoUpdate,{
+    timer <- reactiveTimer(values$updateInterval)
+    observe({
+      timer()
+      updateData()
+    })
+  })
+
+  observe({
+   minDateTime <- min(values$chData$dateTime)
+   maxDateTime <- max(values$chData$dateTime)
+
+  if(input$graphDates == "allDates"){
+    values$graphMinDateTime <- minDateTime
+    values$graphMaxDateTime <- maxDateTime
+  }
+  if(input$graphDates == "selectedDates"){
+    values$graphMinDateTime <- input$dateRng[1]
+    values$graphMaxDateTime <- input$dateRng[2]
+  }
+  if(input$graphDates == "lastHour"){
+    values$graphMinDateTime <- maxDateTime - minutes(60)
+    values$graphMaxDateTime <- maxDateTime
+  }
+  if(input$graphDates == "lastDay"){
+    values$graphMinDateTime <- maxDateTime - days(1)
+    values$graphMaxDateTime <- maxDateTime
+  }
+  if(input$graphDates == "lastWeek"){
+    values$graphMinDateTime <- maxDateTime - days(7)
+    values$graphMaxDateTime <- maxDateTime
+  }
+  if(input$graphDates == "last30"){
+    values$graphMinDateTime <- maxDateTime - days(30)
+    values$graphMaxDateTime <- maxDateTime
+  }
+   print(input$graphDates)
+   print(values$graphMinDateTime)
+   print(values$graphMaxDateTime)
+  })
+  
+  output$dateRange <- renderUI({
+    dateRangeInput("dateRng", "Select the date range:",
+                   start = as.Date(min(values$chData$dateTime)),
+                   end = (as.Date(max(values$chData$dateTime)) + 1),
+                   min = (as.Date(min(values$chData$dateTime))),
+                  max = (as.Date(max(values$chData$dateTime)) + 1))
+  })
+
   #output$testText <- renderText(values$test)
 
   output$plot <- renderPlot({
     
     d <- values$chData
     d <- subset(d, (chamber %in% input$chambers))
-    startGraphDateTime <- as.POSIXct(as.Date(input$dates[1]))
-    endGraphDateTime <- as.POSIXct(as.Date(input$dates[2]))
+    startGraphDateTime <- values$graphMinDateTime
+    endGraphDateTime <- values$graphMaxDateTime
     #add a day to make sure it gets all the way to midnight
     endGraphDateTime <- endGraphDateTime + 86400
     d <- subset(d, dateTime >= startGraphDateTime & dateTime < endGraphDateTime)
