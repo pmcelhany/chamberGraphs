@@ -6,6 +6,7 @@ library(ggplot2)
 library(stringr)
 library(shinyjs)
 library(lubridate)
+library(shinyFiles)
 
 options(shiny.maxRequestSize=50*1024^2) 
 
@@ -25,7 +26,7 @@ calcPCO2 <- function(airFlowSLPM, airCO2ppm, CO2flowSCCM){
 
 # Define UI ----
 ui <- fluidPage(
-  useShinyjs(),
+  shinyjs::useShinyjs(),
   titlePanel("CO2 Chambers"),
   sidebarLayout(
     sidebarPanel( width = 2,
@@ -77,6 +78,7 @@ ui <- fluidPage(
 # Define server logic ----
 server <- function(input, output) {
   volumes <- getVolumes()
+  
   shinyDirChoose(input, 'folder', roots = volumes, filetypes=c('', 'txt'))
   
   processFiles <- function(fileNames, filePaths){
@@ -131,35 +133,34 @@ server <- function(input, output) {
         dEndIndex <- dEndIndex + winLen
       }
       d <- rbind(d, dShort)
-      #output$dTable <- renderDataTable({d})
     }
     return(d)
   } 
   
   observeEvent(input$fileMode, {
     if(input$fileMode == "autoUpdate"){
-      disable("files")
-      hide("files")
-      enable("folder")
-      enable("batFile")
-      enable("updateFreq")
-      enable("startAutoUpdate")
-      show("folder")
-      show("batFile")
-      show("updateFreq")
-      show("startAutoUpdate")
+      shinyjs::disable("files")
+      shinyjs::hide("files")
+      shinyjs::enable("folder")
+      shinyjs::enable("batFile")
+      shinyjs::enable("updateInt")
+      shinyjs::enable("startAutoUpdate")
+      shinyjs::show("folder")
+      shinyjs::show("batFile")
+      shinyjs::show("updateInt")
+      shinyjs::show("startAutoUpdate")
     }
     if(input$fileMode == "selectFiles"){
-      enable("files")
-      show("files")
-      disable("folder")
-      disable("batFile")
-      disable("updateFreq")
-      disable("startAutoUpdate")
-      hide("folder")
-      hide("batFile")
-      hide("updateFreq")
-      hide("startAutoUpdate")
+      shinyjs::enable("files")
+      shinyjs::show("files")
+      shinyjs::disable("folder")
+      shinyjs::disable("batFile")
+      shinyjs::disable("updateInt")
+      shinyjs::disable("startAutoUpdate")
+      shinyjs::hide("folder")
+      shinyjs::hide("batFile")
+      shinyjs::hide("updateInt")
+      shinyjs::hide("startAutoUpdate")
     }
   })
   
@@ -185,9 +186,7 @@ server <- function(input, output) {
   
   observeEvent(input$updateInt,{
     #user input is in minutes, but reactivetimer uses milliseconds
-    print(input$updateInt)
     values$updateInterval <- as.integer(input$updateInt) * 60 * 1000
-    print(values$updateInterval)
   })
   
   updateData <- function(){
@@ -234,9 +233,6 @@ server <- function(input, output) {
     values$graphMinDateTime <- maxDateTime - days(30)
     values$graphMaxDateTime <- maxDateTime
   }
-   print(input$graphDates)
-   print(values$graphMinDateTime)
-   print(values$graphMaxDateTime)
   })
   
   output$dateRange <- renderUI({
