@@ -36,7 +36,8 @@ ui <- fluidPage(
        fileInput("files", h4("Select Input Files"), multiple = TRUE, accept = c(".lvm", ".txt")),
        shinyDirButton('folder', 'Update Files Folder', 'Please select a folder', FALSE),
        fileInput("batFile", h4("Update batchfile"), multiple = FALSE, accept = c(".bat")),
-       textInput("updateInt", "Update time interval (minutes)", "15"),
+       textInput("updateInt", "Update time interval (minutes)", "10"),
+       fileInput("threshFile", h4("Alarm Thresholds File"), multiple = FALSE, accept = c(".csv")),
        actionButton("startAutoUpdate", "Start auto update"),
        textInput("avgWin", "Moving average window (nObs)", "4"),
        textInput("inCO2", "Input Air stream CO2 (ppm)", "6"),
@@ -88,6 +89,7 @@ server <- function(input, output) {
     # Make sure it closes when we exit this reactive, even if there's an error
     on.exit(progress$close())
     
+    
     progress$set(message = "Processing File", value = 0)
     
     d <- data.frame(chamber = character(), dateTime = character(),
@@ -98,12 +100,8 @@ server <- function(input, output) {
       # Set the progress bar, and update the detail text.
       progress$set(value = i, detail = paste(i, " of ", length(fileNames)))
       chamberID <- word(fileNames[i], 1, 1, sep = "_")
-      #dTime <- read.table(filePaths[i], header = FALSE, sep = "\t", skip = 9, nrows = 2)
-      #startDateTime <- paste(dTime$V2[1], dTime$V2[2], sep = "_")
-      #startDateTime <- as.POSIXct(strptime(startDateTime, "%Y/%m/%d_%H:%M:%OS"))
       fileStartDateTime <- word(fileNames[i], 2, 3, sep = "_")
       fileStartDateTime <- as.POSIXct(strptime(fileStartDateTime, "%y-%m-%d_%H%M"))
-      #values$test <- startDateTime
       dtemp <- read.table(filePaths[i], header = FALSE, sep = "\t", skip = 22, skipNul = TRUE)
       #difference (in seconds) from start of program and start of file
       offsetTime <- dtemp$V1[1]
@@ -137,6 +135,12 @@ server <- function(input, output) {
     return(d)
   } 
   
+  setStatus <- function(d, thresh){
+    ds <- data.frame(chamber = thresh$chamber)
+    ds$status <- ""
+    status[thresh$monitor == "no"] <- "Chamber not monitored"
+  }
+  
   observeEvent(input$fileMode, {
     if(input$fileMode == "autoUpdate"){
       shinyjs::disable("files")
@@ -144,10 +148,12 @@ server <- function(input, output) {
       shinyjs::enable("folder")
       shinyjs::enable("batFile")
       shinyjs::enable("updateInt")
+#      shinyjs::enable("threshFile")
       shinyjs::enable("startAutoUpdate")
       shinyjs::show("folder")
       shinyjs::show("batFile")
       shinyjs::show("updateInt")
+ #     shinyjs::show("threshFile")
       shinyjs::show("startAutoUpdate")
     }
     if(input$fileMode == "selectFiles"){
@@ -156,17 +162,19 @@ server <- function(input, output) {
       shinyjs::disable("folder")
       shinyjs::disable("batFile")
       shinyjs::disable("updateInt")
+ #     shinyjs::disable("threshFile")
       shinyjs::disable("startAutoUpdate")
       shinyjs::hide("folder")
       shinyjs::hide("batFile")
       shinyjs::hide("updateInt")
+ #     shinyjs::hide("threshFile")
       shinyjs::hide("startAutoUpdate")
     }
   })
   
-  values <- reactiveValues(chData = NULL, dataDir = NULL, batFilePath = NULL, 
+  values <- reactiveValues(chData = NULL, dataDir = NULL, batFilePath = NULL, thresholds = NULL, 
                            updateInterval = NULL, graphMinDateTime = NULL, 
-                           graphMaxDateTime = NULL, test = NULL)
+                           graphMaxDateTime = NULL, chStatus = NULL, test = NULL)
   
   observeEvent(input$files,{
     values$chData <- processFiles(input$files$name, input$files$datapath)
@@ -182,6 +190,11 @@ server <- function(input, output) {
   
   observeEvent(input$batFile, {
     values$batFilePath <- input$batFile$datapath
+  })
+  
+  observeEvent(input$threshFile, {
+    values$thresholds <- read.csv(input$threshFile$datapath, stringsAsFactors = FALSE)
+    print(values$thresholds)
   })
   
   observeEvent(input$updateInt,{
@@ -242,6 +255,7 @@ server <- function(input, output) {
                    min = (as.Date(min(values$chData$dateTime))),
                   max = (as.Date(max(values$chData$dateTime)) + 1))
   })
+  
 
   #output$testText <- renderText(values$test)
 

@@ -1,0 +1,13 @@
+﻿chamber,monitor,tempLow,tempHigh,airLow,airHigh,co2Low,co2High,treatName
+1,yes,8,12,9.5,10.5,3.3,4.3,Low_pH
+2,no,,,,,,,
+3,yes,8,12,9.5,10.5,12.3,13.3,Mid_pH
+4,yes,8,12,9.5,10.5,21.35,22.35,High_pH
+5,yes,8,12,9.5,10.5,3.3,4.3,Low_pH
+6,yes,8,12,9.5,10.5,12.3,13.3,Mid_pH
+7,yes,8,12,9.5,10.5,21.35,22.35,High_pH
+8,yes,8,12,9.5,10.5,3.3,4.3,Low_pH
+9,yes,8,12,9.5,10.5,12.3,13.3,Mid_pH
+10,yes,8,12,9.5,10.5,21.35,22.35,High_pH
+11,no,,,,,,,
+12,no,,,,,,,
