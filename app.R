@@ -1,5 +1,7 @@
 #######
 ## Chamber Plots
+library(ggplot2)
+lapply(paste('package:',names(sessionInfo()$otherPkgs),sep=""),detach,character.only=TRUE,unload=TRUE)
 
 library(shiny)
 library(ggplot2)
@@ -83,7 +85,7 @@ ui <- fluidPage(
 
 # Define server logic ----
 server <- function(input, output) {
-  volumes <- getVolumes()
+  volumes <- getVolumes()()
   
   shinyDirChoose(input, 'folder', roots = volumes, filetypes=c('', 'txt'))
   
@@ -199,7 +201,6 @@ server <- function(input, output) {
   
   observeEvent(input$threshFile, {
     values$thresholds <- read.csv(input$threshFile$datapath, stringsAsFactors = FALSE)
-    print(values$thresholds)
   })
   
   observeEvent(input$updateInt,{
@@ -212,7 +213,14 @@ server <- function(input, output) {
   })
   
   updateData <- function(){
-    shell(values$batFilePath)
+    os <- .Platform$OS.type
+    if(!is.null(values$batFilePath) & os == "windows" ){
+      shell(values$batFilePath)
+    }
+    if(!is.null(values$batFilePath) & os == "unix" ){
+      #need to fix this so it will work with mac
+      # for mac, probably need system2() instead of shell()
+    }
     filesInFolder <- list.files(path=values$dataDir, pattern="*.lvm", full.names=TRUE, recursive=FALSE)
     filePaths <- unlist(filesInFolder)
     fileNames <- basename(filePaths)
@@ -359,8 +367,7 @@ server <- function(input, output) {
     d <- subset(d, (chamber %in% input$chambers))
     startGraphDateTime <- values$graphMinDateTime
     endGraphDateTime <- values$graphMaxDateTime
-    #add a day to make sure it gets all the way to midnight
-    endGraphDateTime <- endGraphDateTime + 86400
+    endGraphDateTime <- endGraphDateTime
     d <- subset(d, dateTime >= startGraphDateTime & dateTime < endGraphDateTime)
     yLimits <- c(0, 20)
     if(input$plotType == "temperature"){
