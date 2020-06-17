@@ -1,8 +1,5 @@
 #######
 ## Chamber Plots
-library(ggplot2)
-lapply(paste('package:',names(sessionInfo()$otherPkgs),sep=""),detach,character.only=TRUE,unload=TRUE)
-
 library(shiny)
 library(ggplot2)
 library(stringr)
